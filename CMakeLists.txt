@@ -23,6 +23,13 @@ add_library(perfmap SHARED src/c/perf-map-agent.c src/c/perf-map-file.c)
 find_package(Java REQUIRED)
 include(UseJava)
 
+if(EXISTS "${JAVA_INCLUDE_PATH}/jvmticmlr.h")
+    execute_process(COMMAND grep _jvmtiCompiledMethodLoadCompLevelRecord "${JAVA_INCLUDE_PATH}/jvmticmlr.h" OUTPUT_VARIABLE HAVE_COMP_LEVEL)
+    if (NOT ${HAVE_COMP_LEVEL})
+        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAVE_COMP_LEVEL ")
+    endif()
+endif()
+
 set(CMAKE_JAVA_INCLUDE_PATH ${JAVA_INCLUDE_PATH}/../lib/tools.jar)
 set(CMAKE_JAVA_TARGET_OUTPUT_DIR ${OUTDIR})
 

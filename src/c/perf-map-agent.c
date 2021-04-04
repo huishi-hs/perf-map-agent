@@ -139,10 +139,11 @@ void generate_single_entry(
         jvmtiEnv *jvmti,
         jmethodID method,
         const void *code_addr,
-        jint code_size) {
+        jint code_size,
+        const jint comp_level) {
     char entry[STRING_BUFFER_SIZE];
     sig_string(jvmti, method, entry, sizeof(entry), frame_annotation(false));
-    perf_map_write_entry(method_file, code_addr, (unsigned int) code_size, entry);
+    perf_map_write_entry(method_file, code_addr, (unsigned int) code_size, entry, comp_level);
 }
 
 /* Generates either a simple or a complex unfolded entry. */
@@ -168,7 +169,8 @@ void write_unfolded_entry(
         jmethodID root_method,
         const char *root_name,
         const void *start_addr,
-        const void *end_addr) {
+        const void *end_addr,
+        const jint compile_level) {
     // needs to accommodate: entry_name + " in " + root_name
     char inlined_name[STRING_BUFFER_SIZE * 2 + 4];
     const char *entry_p;
@@ -195,7 +197,7 @@ void write_unfolded_entry(
         }
     }
 
-    perf_map_write_entry(method_file, start_addr, (unsigned int) (end_addr - start_addr), entry_p);
+    perf_map_write_entry(method_file, start_addr, (unsigned int) (end_addr - start_addr), entry_p, compile_level);
 }
 
 void dump_entries(
@@ -232,7 +234,8 @@ void generate_unfolded_entries(
         jmethodID root_method,
         jint code_size,
         const void* code_addr,
-        const void* compile_info) {
+        const void* compile_info,
+        const jint compile_level) {
     const jvmtiCompiledMethodLoadRecordHeader *header = compile_info;
     char root_name[STRING_BUFFER_SIZE];
 
@@ -260,9 +263,9 @@ void generate_unfolded_entries(
                 void *end_addr = info->pc;
 
                 if (i > 0)
-                    write_unfolded_entry(jvmti, &record->pcinfo[i - 1], root_method, root_name, start_addr, end_addr);
+                    write_unfolded_entry(jvmti, &record->pcinfo[i - 1], root_method, root_name, start_addr, end_addr, compile_level);
                 else
-                    generate_single_entry(jvmti, root_method, start_addr, (unsigned int) (end_addr - start_addr));
+                    generate_single_entry(jvmti, root_method, start_addr, (unsigned int) (end_addr - start_addr), compile_level);
 
                 start_addr = info->pc;
                 cur_method = top_method;
@@ -275,12 +278,12 @@ void generate_unfolded_entries(
             const void *end_addr = code_addr + code_size;
 
             if (i > 0)
-                write_unfolded_entry(jvmti, &record->pcinfo[i - 1], root_method, root_name, start_addr, end_addr);
+                write_unfolded_entry(jvmti, &record->pcinfo[i - 1], root_method, root_name, start_addr, end_addr, compile_level);
             else
-                generate_single_entry(jvmti, root_method, start_addr, (unsigned int) (end_addr - start_addr));
+                generate_single_entry(jvmti, root_method, start_addr, (unsigned int) (end_addr - start_addr), compile_level);
         }
     } else {
-        generate_single_entry(jvmti, root_method, code_addr, code_size);
+        generate_single_entry(jvmti, root_method, code_addr, code_size, compile_level);
     }
 }
 
@@ -293,10 +296,23 @@ cbCompiledMethodLoad(
             jint map_length,
             const jvmtiAddrLocationMap* map,
             const void* compile_info) {
+    jint compile_level = NO_COMP_LEVEL;
+#ifdef HAVE_COMP_LEVEL
+    {
+        const jvmtiCompiledMethodLoadRecordHeader *header = compile_info;
+        while (header != NULL) {
+            if (header->kind == JVMTI_CMLR_COMP_LEVEL) {
+                compile_level = ((jvmtiCompiledMethodLoadCompLevelRecord*)header)->level;
+                break;
+            }
+            header = header->next;
+        }
+    }
+#endif
     if (unfold_inlined_methods && compile_info != NULL)
-        generate_unfolded_entries(jvmti, method, code_size, code_addr, compile_info);
+        generate_unfolded_entries(jvmti, method, code_size, code_addr, compile_info, compile_level);
     else
-        generate_single_entry(jvmti, method, code_addr, code_size);
+        generate_single_entry(jvmti, method, code_addr, code_size, compile_level);
 }
 
 void JNICALL
@@ -304,7 +320,12 @@ cbDynamicCodeGenerated(jvmtiEnv *jvmti,
             const char* name,
             const void* address,
             jint length) {
-    perf_map_write_entry(method_file, address, (unsigned int) length, name);
+#ifdef HAVE_COMP_LEVEL
+    jint compile_level = DYN_GEN_CODE_COMP_LEVEL;
+#else
+    jint compile_level = NO_COMP_LEVEL;
+#endif
+    perf_map_write_entry(method_file, address, (unsigned int) length, name, compile_level);
 }
 
 void set_notification_mode(jvmtiEnv *jvmti, jvmtiEventMode mode) {

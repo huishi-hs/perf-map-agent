@@ -43,7 +43,14 @@ int perf_map_close(FILE *fp) {
         return 0;
 }
 
-void perf_map_write_entry(FILE *method_file, const void* code_addr, unsigned int code_size, const char* entry) {
-    if (method_file)
-        fprintf(method_file, "%lx %x %s\n", (unsigned long) code_addr, code_size, entry);
+void perf_map_write_entry(FILE *method_file, const void* code_addr, unsigned int code_size, const char* entry, const int compile_level) {
+    if (method_file) {
+        if (compile_level == NO_COMP_LEVEL) {
+          fprintf(method_file, "%lx %x %s\n", (unsigned long) code_addr, code_size, entry);
+        } else if (compile_level == DYN_GEN_CODE_COMP_LEVEL) {
+          fprintf(method_file, "%lx %x _dyn_%s\n", (unsigned long) code_addr, code_size, entry);
+        } else {
+          fprintf(method_file, "%lx %x _%d_%s\n", (unsigned long) code_addr, code_size, compile_level, entry);
+        }
+    }
 }
